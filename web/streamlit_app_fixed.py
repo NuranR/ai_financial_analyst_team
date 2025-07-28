@@ -166,23 +166,23 @@ def main():
                     with st.spinner("🔍 Analyzing financial news..."):
                         try:
                             agent = DataJournalistAgent()
-                            result = agent.analyze(ticker, max_articles=max_articles)
+                            result = agent.analyze(ticker, max_articles)
                             
                             st.success("✅ **Analysis Complete**")
                             
                             # Display results
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Confidence", f"{result.confidence_score}%")
+                                st.metric("Confidence", f"{result.confidence}%")
                             with col2:
-                                st.metric("Data Points", len(result.metadata.get('articles', [])))
+                                st.metric("Data Points", len(result.data.get('articles', [])))
                             
                             st.subheader("📊 Analysis Results")
                             st.write(result.analysis)
                             
-                            if result.metadata.get('articles'):
+                            if result.data.get('articles'):
                                 st.subheader("📰 Top Articles")
-                                for i, article in enumerate(result.metadata['articles'][:3], 1):
+                                for i, article in enumerate(result.data['articles'][:3], 1):
                                     st.write(f"**{i}.** {article.get('title', 'No title')}")
                                     if article.get('description'):
                                         st.write(f"   {article['description'][:100]}...")
@@ -202,25 +202,25 @@ def main():
                 with st.spinner("📊 Analyzing stock data..."):
                     try:
                         agent = QuantitativeAnalystAgent()
-                        result = agent.analyze(ticker, period=analysis_period)
+                        result = agent.analyze(ticker, analysis_period)
                         
                         st.success("✅ **Analysis Complete**")
                         
                         # Display results
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.metric("Confidence", f"{result.confidence_score}%")
+                            st.metric("Confidence", f"{result.confidence}%")
                         with col2:
-                            if result.metadata.get('current_price'):
-                                st.metric("Current Price", f"${result.metadata['current_price']:.2f}")
+                            if result.data.get('current_price'):
+                                st.metric("Current Price", f"${result.data['current_price']:.2f}")
                         
                         st.subheader("📊 Analysis Results")
                         st.write(result.analysis)
                         
                         # Show key metrics if available
-                        if result.metadata.get('metrics'):
+                        if result.data.get('metrics'):
                             st.subheader("📈 Key Metrics")
-                            metrics = result.metadata['metrics']
+                            metrics = result.data['metrics']
                             
                             col1, col2, col3 = st.columns(3)
                             with col1:
@@ -258,16 +258,16 @@ def main():
                             # Display results
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Confidence", f"{result.confidence_score}%")
+                                st.metric("Confidence", f"{result.confidence}%")
                             with col2:
-                                st.metric("Filings Found", len(result.metadata.get('filings', [])))
+                                st.metric("Filings Found", len(result.data.get('filings', [])))
                             
                             st.subheader("📊 Analysis Results")
                             st.write(result.analysis)
                             
-                            if result.metadata.get('filings'):
+                            if result.data.get('filings'):
                                 st.subheader("📋 Recent Filings")
-                                for filing in result.metadata['filings'][:5]:
+                                for filing in result.data['filings'][:5]:
                                     st.write(f"**{filing.get('form', 'Unknown')}** - {filing.get('filing_date', 'No date')}")
                                     if filing.get('description'):
                                         st.write(f"   {filing['description']}")
@@ -296,12 +296,12 @@ def main():
                             if run_data_journalist:
                                 st.write("📰 Running Data Journalist...")
                                 agent = DataJournalistAgent()
-                                results['news'] = agent.analyze(ticker, max_articles=max_articles)
+                                results['news'] = agent.analyze(ticker, max_articles)
                             
                             if run_quant_analyst:
                                 st.write("📈 Running Quantitative Analyst...")
                                 agent = QuantitativeAnalystAgent()
-                                results['quant'] = agent.analyze(ticker, period=analysis_period)
+                                results['quant'] = agent.analyze(ticker, analysis_period)
                             
                             if run_regulator_specialist:
                                 st.write("📋 Running Regulator Specialist...")
@@ -311,25 +311,25 @@ def main():
                             # Now run lead analyst with all results
                             st.write("🎯 Synthesizing insights...")
                             lead_agent = LeadAnalystAgent()
-                            final_result = lead_agent.analyze(ticker, agent_results=results)
+                            final_result = lead_agent.analyze(ticker, results)
                             
                             st.success("✅ **Investment Brief Complete**")
                             
                             # Display final recommendation
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Overall Confidence", f"{final_result.confidence_score}%")
+                                st.metric("Overall Confidence", f"{final_result.confidence}%")
                             with col2:
-                                if final_result.metadata.get('recommendation'):
-                                    st.metric("Recommendation", final_result.metadata['recommendation'].upper())
+                                if final_result.data.get('recommendation'):
+                                    st.metric("Recommendation", final_result.data['recommendation'].upper())
                             
                             st.subheader("📋 Executive Summary")
                             st.write(final_result.analysis)
                             
                             # Show risk factors if available
-                            if final_result.metadata.get('risk_factors'):
+                            if final_result.data.get('risk_factors'):
                                 st.subheader("⚠️ Key Risk Factors")
-                                for risk in final_result.metadata['risk_factors']:
+                                for risk in final_result.data['risk_factors']:
                                     st.write(f"• {risk}")
                         
                         except Exception as e:

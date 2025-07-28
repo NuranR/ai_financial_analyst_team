@@ -23,16 +23,23 @@ Analyze the following news articles and social media mentions for {company_name}
 
 {news_content}
 
-Provide a comprehensive analysis including:
+Provide a CONCISE news analysis (maximum 250 words) in this EXACT format:
 
-1. **Key Headlines Summary**: Most important news items
-2. **Sentiment Analysis**: Overall market sentiment (Positive/Negative/Neutral)
-3. **Financial Impact**: Potential impact on stock performance
-4. **Risk Factors**: Any concerning developments
-5. **Opportunities**: Positive catalysts identified
-6. **Market Moving Events**: News likely to affect stock price
+**KEY HEADLINES**
+• Top 2-3 most important news items
 
-Format your response as a structured report.
+**MARKET SENTIMENT**
+• Overall sentiment: Positive/Negative/Neutral
+• Key sentiment drivers
+
+**POTENTIAL IMPACT**
+• Expected effect on stock price
+• Time horizon for impact
+
+**BOTTOM LINE**
+• Summary in 1-2 sentences
+
+Keep it brief and focused. Use bullet points, avoid long paragraphs.
 """
 
 # Quantitative Analyst Agent Prompts
@@ -64,16 +71,24 @@ Volume Data:
 Anomaly Detection Results:
 {anomaly_results}
 
-Provide a detailed quantitative analysis including:
+Provide a CONCISE quantitative analysis (maximum 300 words) in this EXACT format:
 
-1. **Price Trend Analysis**: Recent price movements and patterns
-2. **Volume Analysis**: Trading volume patterns and anomalies
-3. **Technical Indicators**: Key technical signals
-4. **Anomaly Summary**: Detected anomalies and their significance
-5. **Risk Metrics**: Volatility and other risk indicators
-6. **Trading Recommendations**: Based on quantitative signals
+**PRICE ANALYSIS**
+• Current trend and key levels
+• Volatility assessment
 
-Support your analysis with specific data points and statistical measures.
+**TECHNICAL SIGNALS** 
+• Key indicators and signals
+• Trading momentum
+
+**ANOMALIES & RISKS**
+• Notable patterns detected
+• Risk factors
+
+**BOTTOM LINE**
+• Overall assessment in 1-2 sentences
+
+Keep it professional but brief. Use bullet points, avoid lengthy explanations.
 """
 
 # Regulator Specialist Agent Prompts
@@ -110,16 +125,24 @@ Risk Factors:
 Management Discussion:
 {md_and_a}
 
-Provide a comprehensive regulatory analysis including:
+Provide a CONCISE regulatory analysis (maximum 250 words) in this EXACT format:
 
-1. **Financial Health Assessment**: Based on official filings
-2. **Risk Factor Analysis**: Key risks disclosed by management
-3. **Management Outlook**: Forward-looking statements and guidance
-4. **Regulatory Compliance**: Any compliance issues or concerns
-5. **Corporate Governance**: Management quality and board oversight
-6. **Material Changes**: Significant changes from previous filings
+**COMPLIANCE STATUS**
+• Filing status and regulatory health
+• Key compliance observations
 
-Classify each finding as: OPPORTUNITY, RISK, or NEUTRAL.
+**RISK ASSESSMENT**
+• Primary risk factors identified
+• Regulatory concerns (if any)
+
+**CORPORATE GOVERNANCE**
+• Management quality indicators
+• Governance assessment
+
+**BOTTOM LINE**
+• Overall regulatory assessment in 1-2 sentences
+
+Keep it brief and professional. Use bullet points, focus on key insights only.
 """
 
 # Lead Analyst Agent Prompts
@@ -139,36 +162,36 @@ Your recommendations should be professional, balanced, and suitable for institut
 """
 
 LEAD_ANALYST_SYNTHESIS_PROMPT = """
-As the Lead Analyst, synthesize the following research from your team to create a comprehensive investment brief for {company_name} ({ticker}):
+As the Lead Analyst, synthesize the following research for {company_name} ({ticker}):
 
-NEWS ANALYSIS (Data Journalist):
+NEWS ANALYSIS:
 {news_analysis}
 
-QUANTITATIVE ANALYSIS (Quant Team):
+QUANTITATIVE ANALYSIS:
 {quant_analysis}
 
-REGULATORY ANALYSIS (Compliance Team):
+REGULATORY ANALYSIS:
 {regulatory_analysis}
 
 Current Stock Price: ${current_price}
-Market Cap: ${market_cap}
 
-Create a comprehensive investment brief including:
+Create a CONCISE investment brief (maximum 400 words) in this EXACT format:
 
-1. **Executive Summary**: Key investment thesis (BUY/HOLD/SELL)
-2. **Investment Highlights**: Top 3-5 reasons to invest
-3. **Key Risks**: Primary concerns and risk factors
-4. **Valuation Assessment**: Fair value estimate and rationale
-5. **Catalysts**: Upcoming events that could drive performance
-6. **Risk-Adjusted Recommendation**: Final recommendation with confidence level
-7. **Time Horizon**: Recommended holding period
+**INVESTMENT THESIS**
+• Core investment rationale (1-2 key points)
 
-**Investment Rating Scale:**
-- STRONG BUY: High conviction, significant upside potential
-- BUY: Positive outlook, moderate upside
-- HOLD: Neutral outlook, limited upside/downside
-- SELL: Negative outlook, downside risk
-- STRONG SELL: High conviction, significant downside risk
+**KEY STRENGTHS**
+• Top 2-3 positive factors
 
-Provide specific price targets and rationale. Be balanced and objective in your analysis.
+**PRIMARY RISKS**
+• Top 2-3 concerns/risks
+
+**RECOMMENDATION: [BUY/HOLD/SELL]**
+• Final rating with 1-sentence rationale
+• Confidence Level: [High/Medium/Low]
+
+**PRICE TARGET**
+• 12-month target (if possible)
+
+Keep it executive-summary style. Use bullet points. Be decisive but balanced.
 """
