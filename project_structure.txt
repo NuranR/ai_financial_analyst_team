@@ -1,0 +1,54 @@
+agents/
+    __init__.py
+    base_agent.py
+    data_journalist.py
+    quantitative_analyst.py
+    regulator_specialist.py
+    lead_analyst.py
+
+models/
+    __init__.py
+    anomaly_detector.py
+    model_utils.py
+
+data/
+    __init__.py
+    news_scraper.py
+    stock_data.py
+    sec_filings.py
+    data_processor.py
+
+api/
+    __init__.py
+    alpha_vantage.py
+    news_api.py
+    sec_api.py
+
+web/
+    __init__.py
+    streamlit_app.py
+    components/
+        __init__.py
+        sidebar.py
+        results_display.py
+
+config/
+    __init__.py
+    settings.py
+    prompts.py
+
+tests/
+    __init__.py
+    test_agents.py
+    test_data.py
+    test_api.py
+
+notebooks/
+    exploratory_analysis.ipynb
+    model_development.ipynb
+
+requirements.txt
+.env.example
+.gitignore
+app.py
+docker-compose.yml
