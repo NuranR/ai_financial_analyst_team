@@ -13,13 +13,14 @@ class Settings(BaseSettings):
     """Application settings."""
     
     # API Keys (optional during development)
-    openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")
+    gemini_api_key: Optional[str] = Field(None, env="GEMINI_API_KEY")
+    # openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")  # Kept for future use
+    # anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")  # Kept for future use
     alpha_vantage_api_key: Optional[str] = Field(None, env="ALPHA_VANTAGE_API_KEY")
     news_api_key: Optional[str] = Field(None, env="NEWS_API_KEY")
     
     # Model Configuration
-    default_llm_model: str = Field("gpt-4-turbo-preview", env="DEFAULT_LLM_MODEL")
+    default_llm_model: str = Field("gemini-2.0-flash-exp", env="DEFAULT_LLM_MODEL")
     temperature: float = Field(0.1, env="TEMPERATURE")
     max_tokens: int = Field(4000, env="MAX_TOKENS")
     

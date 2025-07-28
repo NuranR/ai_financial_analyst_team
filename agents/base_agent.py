@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from loguru import logger
-import openai
+import google.generativeai as genai
 from config.settings import settings
 
 
@@ -24,7 +24,15 @@ class BaseAgent(ABC):
     def __init__(self, name: str, model: str = None):
         self.name = name
         self.model = model or settings.default_llm_model
-        self.client = openai.OpenAI(api_key=settings.openai_api_key)
+        
+        # Configure Gemini
+        if settings.gemini_api_key:
+            genai.configure(api_key=settings.gemini_api_key)
+            self.client = genai.GenerativeModel(self.model)
+        else:
+            logger.warning("No Gemini API key provided. LLM calls will fail.")
+            self.client = None
+            
         logger.info(f"Initialized {self.name} agent with model {self.model}")
     
     @abstractmethod
@@ -53,22 +61,30 @@ class BaseAgent(ABC):
             str: LLM response
         """
         try:
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
+            if not self.client:
+                raise ValueError("No LLM client available. Check API key configuration.")
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=settings.temperature,
-                max_tokens=settings.max_tokens
+            # Combine system prompt and user prompt for Gemini
+            full_prompt = prompt
+            if system_prompt:
+                full_prompt = f"{system_prompt}\n\n{prompt}"
+            
+            # Configure generation settings
+            generation_config = {
+                "temperature": settings.temperature,
+                "max_output_tokens": settings.max_tokens,
+            }
+            
+            # Generate response using Gemini
+            response = self.client.generate_content(
+                full_prompt,
+                generation_config=generation_config
             )
             
-            return response.choices[0].message.content.strip()
+            return response.text.strip()
             
         except Exception as e:
-            logger.error(f"Error calling LLM in {self.name}: {str(e)}")
+            logger.error(f"Error calling Gemini LLM in {self.name}: {str(e)}")
             raise
     
     def _validate_ticker(self, ticker: str) -> str:
