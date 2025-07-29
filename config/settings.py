@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")  # Kept for future use
     alpha_vantage_api_key: Optional[str] = Field(None, env="ALPHA_VANTAGE_API_KEY")
     news_api_key: Optional[str] = Field(None, env="NEWS_API_KEY")
+    huggingface_api_token: Optional[str] = Field(None, env="HUGGINGFACE_API_TOKEN")
     
     # Model Configuration
     default_llm_model: str = Field("gemini-2.0-flash-exp", env="DEFAULT_LLM_MODEL")
@@ -34,6 +35,8 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", env="LOG_LEVEL")
     max_articles_per_search: int = Field(50, env="MAX_ARTICLES_PER_SEARCH")
     stock_data_period: str = Field("1y", env="STOCK_DATA_PERIOD")
+    demo_mode: bool = Field(False, env="DEMO_MODE")
+    use_huggingface: bool = Field(False, env="USE_HUGGINGFACE")
     
     # MLflow Configuration
     mlflow_tracking_uri: str = Field("http://localhost:5000", env="MLFLOW_TRACKING_URI")

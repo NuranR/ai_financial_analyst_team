@@ -63,6 +63,9 @@ def main():
     # Run analysis button
     run_analysis = st.sidebar.button("🚀 Run Analysis", type="primary")
     
+    # Test NewsAPI button
+    test_news = st.sidebar.button("📰 Test NewsAPI", type="secondary")
+    
     # Create tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🏠 Overview", 
@@ -338,6 +341,51 @@ def main():
                 st.info("👆 **Click 'Run Analysis' in the sidebar to start**")
         else:
             st.info("🎯 **Lead Analyst disabled**. Enable in sidebar to run analysis.")
+
+    # Handle test news button
+    if test_news:
+        test_news_api_display(ticker)
+
+
+def test_news_api_display(ticker: str):
+    """Display NewsAPI test results in Streamlit"""
+    from api.news_api import NewsAPI
+    from data.stock_data import get_company_info
+    
+    st.header("📰 NewsAPI Test Results")
+    
+    try:
+        # Get company info for proper name
+        company_info = get_company_info(ticker)
+        company_name = company_info.get('longName', ticker)
+        
+        # Test NewsAPI
+        news_api = NewsAPI()
+        with st.spinner(f"Fetching news for {company_name} ({ticker})..."):
+            articles = news_api.get_company_news(company_name, ticker, days_back=7, max_articles=10)
+        
+        st.success(f"✅ Found {len(articles)} relevant articles for {ticker}")
+        
+        if articles:
+            # Display articles
+            for i, article in enumerate(articles):
+                with st.expander(f"📰 Article {i+1}: {article['title']}", expanded=(i==0)):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.write(f"**Source:** {article['source']}")
+                        st.write(f"**Published:** {article['published_at']}")
+                        if article['description']:
+                            st.write(f"**Description:** {article['description']}")
+                        st.write(f"**URL:** [Read Full Article]({article['url']})")
+                    
+                    with col2:
+                        st.metric("Relevance Score", f"{article['relevance_score']:.2f}")
+        else:
+            st.warning("No relevant articles found.")
+            
+    except Exception as e:
+        st.error(f"❌ **NewsAPI Test Failed**: {str(e)}")
 
 
 if __name__ == "__main__":

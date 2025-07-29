@@ -52,17 +52,27 @@ class NewsAPI:
             if self.api_key:
                 params['apiKey'] = self.api_key
                 
+            logger.info(f"NewsAPI request params: {params}")
             response = requests.get(f"{self.base_url}/everything", params=params)
+            logger.info(f"NewsAPI response status: {response.status_code}")
+            
             response.raise_for_status()
             
             data = response.json()
+            total_results = data.get('totalResults', 0)
             articles = data.get('articles', [])
+            
+            logger.info(f"NewsAPI returned {total_results} total results, {len(articles)} articles in response")
+            
+            # Log first few article titles for debugging
+            for i, article in enumerate(articles[:3]):
+                logger.info(f"Article {i+1}: {article.get('title', 'No title')}")
             
             # Filter and format articles
             formatted_articles = []
             for article in articles[:max_articles]:
                 if self._is_relevant_article(article, ticker, company_name):
-                    formatted_articles.append({
+                    formatted_article = {
                         'title': article.get('title', ''),
                         'description': article.get('description', ''),
                         'content': article.get('content', ''),
@@ -70,7 +80,11 @@ class NewsAPI:
                         'published_at': article.get('publishedAt', ''),
                         'source': article.get('source', {}).get('name', ''),
                         'relevance_score': self._calculate_relevance(article, ticker, company_name)
-                    })
+                    }
+                    formatted_articles.append(formatted_article)
+                    logger.info(f"Added relevant article: {formatted_article['title'][:100]}...")
+                else:
+                    logger.debug(f"Filtered out: {article.get('title', 'No title')[:100]}...")
             
             # Sort by relevance score
             formatted_articles.sort(key=lambda x: x['relevance_score'], reverse=True)

@@ -123,6 +123,9 @@ class DataJournalistAgent(BaseAgent):
         """Format news articles for LLM analysis."""
         formatted_content = []
         
+        logger.info(f"📰 Formatting {len(articles)} articles for analysis")
+        print(f"📰 FORMATTING {len(articles)} ARTICLES FOR ANALYSIS")
+        
         for i, article in enumerate(articles[:10], 1):  # Limit to top 10 for token efficiency
             content = f"""
 Article {i}:
@@ -133,8 +136,23 @@ Description: {article['description']}
 Relevance Score: {article['relevance_score']:.2f}
 ---"""
             formatted_content.append(content)
+            
+            # Log each article being formatted
+            logger.info(f"📋 Article {i}: {article['title'][:100]}...")
+            print(f"📋 ARTICLE {i}: {article['title']}")
         
-        return "\n".join(formatted_content)
+        final_content = "\n".join(formatted_content)
+        content_length = len(final_content)
+        
+        logger.info(f"📝 Formatted content length: {content_length} characters")
+        logger.info(f"📝 Content preview: {final_content[:500]}...")
+        
+        print(f"📝 FORMATTED CONTENT LENGTH: {content_length} CHARACTERS")
+        print(f"📝 FULL FORMATTED CONTENT FOR DISTILBART:")
+        print(f"{final_content}")
+        print(f"📝 END OF FORMATTED CONTENT")
+        
+        return final_content
     
     def _get_company_name(self, ticker: str) -> str:
         """Get company name from ticker (simplified mapping)."""

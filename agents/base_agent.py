@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from loguru import logger
-import google.generativeai as genai
 from config.settings import settings
 
 
@@ -25,15 +24,20 @@ class BaseAgent(ABC):
         self.name = name
         self.model = model or settings.default_llm_model
         
-        # Configure Gemini
-        if settings.gemini_api_key:
-            genai.configure(api_key=settings.gemini_api_key)
-            self.client = genai.GenerativeModel(self.model)
+        # Initialize HuggingFace client
+        self.hf_client = None
+        if settings.huggingface_api_token:
+            try:
+                from config.huggingface_client import huggingface_client
+                self.hf_client = huggingface_client
+                logger.info(f"Initialized {self.name} with HuggingFace Llama model")
+            except Exception as e:
+                logger.error(f"Failed to initialize HuggingFace: {e}")
+                raise ValueError("HuggingFace client required but failed to initialize")
         else:
-            logger.warning("No Gemini API key provided. LLM calls will fail.")
-            self.client = None
+            raise ValueError("HUGGINGFACE_API_TOKEN is required")
             
-        logger.info(f"Initialized {self.name} agent with model {self.model}")
+        logger.info(f"Initialized {self.name} agent")
     
     @abstractmethod
     def analyze(self, ticker: str, **kwargs) -> AgentResult:
@@ -51,7 +55,7 @@ class BaseAgent(ABC):
     
     def _call_llm(self, prompt: str, system_prompt: str = None) -> str:
         """
-        Call the language model with the given prompt.
+        Call HuggingFace LLM to generate a response.
         
         Args:
             prompt: User prompt
@@ -60,32 +64,52 @@ class BaseAgent(ABC):
         Returns:
             str: LLM response
         """
+        if not self.hf_client:
+            raise ValueError("HuggingFace client not available")
+        
         try:
-            if not self.client:
-                raise ValueError("No LLM client available. Check API key configuration.")
+            logger.info(f"🤖 {self.name} calling LLM with prompt length: {len(prompt)} chars")
+            logger.info(f"🎯 System prompt: {system_prompt[:100] if system_prompt else 'None'}...")
+            logger.info(f"💬 User prompt preview: {prompt[:300]}...")
             
-            # Combine system prompt and user prompt for Gemini
-            full_prompt = prompt
+            print(f"🤖 {self.name.upper()} CALLING LLM:")
+            print(f"📏 PROMPT LENGTH: {len(prompt)} characters")
+            print(f"🎯 SYSTEM PROMPT: {system_prompt}")
+            print(f"💬 FULL USER PROMPT:")
+            print(f"{prompt}")
+            print(f"💬 END OF PROMPT")
+            
             if system_prompt:
-                full_prompt = f"{system_prompt}\n\n{prompt}"
+                response = self.hf_client.chat_completion(
+                    system_prompt=system_prompt,
+                    user_message=prompt,
+                    max_tokens=settings.max_tokens
+                )
+            else:
+                response = self.hf_client.generate_text(
+                    prompt=prompt,
+                    max_tokens=settings.max_tokens,
+                    temperature=settings.temperature
+                )
             
-            # Configure generation settings
-            generation_config = {
-                "temperature": settings.temperature,
-                "max_output_tokens": settings.max_tokens,
-            }
+            logger.info(f"✅ {self.name} received LLM response length: {len(response) if response else 0} chars")
+            print(f"✅ {self.name.upper()} LLM RESPONSE LENGTH: {len(response) if response else 0} CHARS")
             
-            # Generate response using Gemini
-            response = self.client.generate_content(
-                full_prompt,
-                generation_config=generation_config
-            )
-            
-            return response.text.strip()
-            
+            if response:
+                return response
+            else:
+                # Use fallback with combined context
+                combined_prompt = f"{system_prompt or ''} {prompt}".strip()
+                logger.info(f"⚠️ {self.name} using fallback response")
+                print(f"⚠️ {self.name.upper()} USING FALLBACK RESPONSE")
+                return self.hf_client._generate_fallback_response(combined_prompt)
+                
         except Exception as e:
-            logger.error(f"Error calling Gemini LLM in {self.name}: {str(e)}")
-            raise
+            logger.error(f"HuggingFace error in {self.name}: {str(e)}")
+            print(f"❌ {self.name.upper()} HUGGINGFACE ERROR: {str(e)}")
+            # Use fallback with combined context
+            combined_prompt = f"{system_prompt or ''} {prompt}".strip()
+            return self.hf_client._generate_fallback_response(combined_prompt)
     
     def _validate_ticker(self, ticker: str) -> str:
         """
