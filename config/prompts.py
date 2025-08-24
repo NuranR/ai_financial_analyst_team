@@ -18,6 +18,19 @@ Focus on:
 - Risk factors and opportunities
 """
 
+DATA_JOURNALIST_SUMMARY_PROMPT = """Based on the structured analysis below, write a comprehensive yet concise summary of the financial news sentiment for {company_name} ({ticker}).
+
+STRUCTURED ANALYSIS:
+{structured_analysis}
+
+Please provide:
+1. Overall market sentiment summary
+2. Key themes driving the sentiment
+3. Notable catalysts and their potential impact
+4. Confidence assessment of the analysis
+
+Write in the style of a Reuters or Bloomberg market update."""
+
 DATA_JOURNALIST_ANALYSIS_PROMPT = """
 Analyze the following news articles and social media mentions for {company_name} ({ticker}):
 
