@@ -170,30 +170,41 @@ def main():
                             
                             st.success("✅ **Analysis Complete**")
                             
-                            # Display results
-                            col1, col2 = st.columns(2)
+                            col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("Confidence", f"{result.confidence_score}%")
+                                st.metric("Confidence", f"{result.confidence_score*100:.1f}%")
                             with col2:
-                                st.metric("Data Points", len(result.metadata.get('articles', [])))
+                                st.metric("Articles", result.metadata.get("articles_analyzed", 0))
+                            with col3:
+                                st.metric("Sources", len(result.metadata.get("sources_analyzed", [])))
                             
+                            date_range = result.metadata.get("date_range", {})
+                            if date_range:
+                                st.caption(f"📅 Articles from **{date_range['oldest']}** → **{date_range['newest']}**")
+
                             st.subheader("📊 Analysis Results")
                             st.write(result.analysis)
-                            
-                            if result.metadata.get('articles'):
+
+                            if "structured_data" in result.dict() and result.structured_data.get("key_themes"):
+                                st.subheader("🔑 Key Themes")
+                                st.write(", ".join(result.structured_data["key_themes"]))
+
+                            if result.metadata.get("articles"):
                                 st.subheader("📰 Top Articles")
-                                for i, article in enumerate(result.metadata['articles'][:3], 1):
-                                    st.write(f"**{i}.** {article.get('title', 'No title')}")
+                                for i, article in enumerate(result.metadata['articles'][:5], 1):
+                                    st.markdown(f"**{i}. [{article.get('title','No title')}]({article.get('url','')})**")
                                     if article.get('description'):
-                                        st.write(f"   {article['description'][:100]}...")
-                        
+                                        st.caption(article['description'][:150] + "...")
+                                    st.write(f"Source: {article.get('source')} | Relevance: {article.get('relevance_score',0):.2f}")
+                                    st.divider()
+                            
                         except Exception as e:
                             st.error(f"❌ **Error**: {str(e)}")
             else:
                 st.info("👆 **Click 'Run Analysis' in the sidebar to start**")
         else:
             st.info("📰 **Data Journalist disabled**. Enable in sidebar to run analysis.")
-    
+        
     with tab3:
         if run_quant_analyst:
             st.header("📈 Quantitative Analysis")

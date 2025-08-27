@@ -14,6 +14,7 @@ class AgentResult(BaseModel):
     company_ticker: str
     analysis: str
     confidence_score: float
+    structured_data: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = {}
     errors: Optional[str] = None
 

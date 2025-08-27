@@ -201,7 +201,9 @@ class DataJournalistAgent(BaseAgent):
 
     @lru_cache(maxsize=32)
     def _get_cached_news(self, company_name: str, ticker: str, days_back: int, max_articles: int) -> List[Dict[str, Any]]:
-        return self.news_service.get_company_news(company_name, ticker, days_back, max_articles)
+        articles = self.news_service.get_company_news(company_name, ticker, days_back, max_articles)
+        logger.info(f"Retrieved {len(articles)} raw articles for {ticker} ({company_name})")
+        return articles
 
     def _validate_articles(self, articles: List[Dict[str, Any]]) -> List[NewsArticle]:
         valid = []
@@ -210,11 +212,14 @@ class DataJournalistAgent(BaseAgent):
                 article = NewsArticle(**a)
                 if len(article.title) > 10 and article.relevance_score > 0.1:
                     valid.append(article)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Invalid article skipped: {e}")
                 continue
+        logger.info(f"Validated {len(valid)}/{len(articles)} articles after filtering")
         return valid
 
     def _perform_structured_analysis(self, texts: List[str], articles: List[NewsArticle]) -> NewsAnalysisResult:
+        logger.info(f"Performing sentiment & topic analysis on {len(texts)} texts...")
         scores, confs = [], []
         for t in texts:
             s, c = self.sentiment_analyzer.analyze_text(t)
@@ -225,7 +230,7 @@ class DataJournalistAgent(BaseAgent):
         overall = (Sentiment.BULLISH if avg_score > 0.1 else
                    Sentiment.BEARISH if avg_score < -0.1 else
                    Sentiment.NEUTRAL)
-        return NewsAnalysisResult(
+        result =  NewsAnalysisResult(
             overall_sentiment=overall,
             sentiment_score=avg_score,
             sentiment_confidence=avg_conf,
@@ -233,6 +238,11 @@ class DataJournalistAgent(BaseAgent):
             potential_catalysts=self._detect_catalysts(texts),
             summary=""
         )
+        logger.info(
+            f"Analysis complete → Sentiment: {result.overall_sentiment}, "
+            f"Score: {result.sentiment_score:.2f}, Themes: {result.key_themes}"
+        )
+        return result
 
     def _detect_catalysts(self, texts: List[str]) -> List[Catalyst]:
         catalysts = []
@@ -279,7 +289,7 @@ class DataJournalistAgent(BaseAgent):
 
     def _prepare_metadata(self, articles: List[NewsArticle], analysis: NewsAnalysisResult) -> Dict[str, Any]:
         sources = list({a.source for a in articles})
-        return {
+        metadata = {
             "articles_analyzed": len(articles),
             "sources_analyzed": sources[:5],
             "avg_relevance_score": np.mean([a.relevance_score for a in articles]),
@@ -290,6 +300,12 @@ class DataJournalistAgent(BaseAgent):
             "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
             "model_version": "finbert-topic-1.0"
         }
+        logger.info(
+            f"Metadata prepared → {metadata['articles_analyzed']} articles, "
+            f"Sources: {', '.join(metadata['sources_analyzed'])}, "
+            f"Date range: {metadata['date_range']['oldest']} → {metadata['date_range']['newest']}"
+        )
+        return metadata
 
     def _create_no_data_result(self, ticker: str) -> AgentResult:
         return AgentResult(
