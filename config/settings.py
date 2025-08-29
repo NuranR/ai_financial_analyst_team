@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")  # Kept for future use
     alpha_vantage_api_key: Optional[str] = Field(None, env="ALPHA_VANTAGE_API_KEY")
     news_api_key: Optional[str] = Field(None, env="NEWS_API_KEY")
+    news_relevance_threshold: float = 0.25
     
     # Model Configuration
     default_llm_model: str = Field("gemini-2.0-flash-exp", env="DEFAULT_LLM_MODEL")

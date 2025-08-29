@@ -102,6 +102,11 @@ class BaseAgent(ABC):
             raise ValueError("Ticker must be a non-empty string")
         
         return ticker.upper().strip()
+
+    def _validate_days_back(self, days_back: int) -> int:
+        if not (1 <= days_back <= 31):
+            raise ValueError("days_back must be between 1 and 31")
+        return days_back
     
     def _calculate_confidence_score(self, analysis: str, **factors) -> float:
         """

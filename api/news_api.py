@@ -13,6 +13,7 @@ class NewsAPI:
     def __init__(self):
         self.api_key = settings.news_api_key
         self.base_url = settings.news_api_base_url
+        self.news_relevance_threshold = settings.news_relevance_threshold
         
     def get_company_news(self, 
                         company_name: str, 
@@ -37,14 +38,14 @@ class NewsAPI:
             start_date = end_date - timedelta(days=days_back)
             
             # Search query combining company name and ticker
-            query = f'"{company_name}" OR "{ticker}" AND (stock OR shares OR earnings OR financial)'
+            query = f'"{company_name}" AND "{ticker}" AND (stock OR shares OR earnings OR financial)'
             
             params = {
                 'q': query,
                 'from': start_date.strftime('%Y-%m-%d'),
                 'to': end_date.strftime('%Y-%m-%d'),
                 'sortBy': 'relevancy',
-                'pageSize': min(max_articles, 100),  # API limit
+                'pageSize': min(max_articles, 50),
                 'language': 'en',
                 'domains': 'reuters.com,bloomberg.com,cnbc.com,marketwatch.com,yahoo.com,finance.yahoo.com'
             }
@@ -74,8 +75,9 @@ class NewsAPI:
             
             # Sort by relevance score
             formatted_articles.sort(key=lambda x: x['relevance_score'], reverse=True)
+            formatted_articles = [a for a in formatted_articles if a['relevance_score'] >= self.news_relevance_threshold]
             
-            logger.info(f"Fetched {len(formatted_articles)} relevant articles for {ticker}")
+            logger.info(f"Fetched {len(formatted_articles)} relevant articles for {ticker}, and days_back={days_back} max_articles={max_articles}   ")
             return formatted_articles
             
         except Exception as e:

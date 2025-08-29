@@ -4,7 +4,7 @@ from functools import lru_cache
 import json
 
 from loguru import logger
-from pydantic import BaseModel, Field, HttpUrl, validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from enum import Enum
 import numpy as np
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -58,7 +58,7 @@ class NewsArticle(BaseModel):
     url: Optional[HttpUrl] = None
     relevance_score: float = Field(0.0, ge=0, le=1)
     
-    @validator('published_at', pre=True)
+    @field_validator('published_at', mode='before')
     def parse_published_at(cls, v):
         if isinstance(v, str):
             v = v.replace("Z", "+00:00")
@@ -158,16 +158,15 @@ class DataJournalistAgent(BaseAgent):
         try:
             ticker = self._validate_ticker(ticker)
             company_name = kwargs.get("company_name") or self.lookup_service.get_company_name(ticker)
-            days_back = kwargs.get("days_back", 3)
-            max_articles = kwargs.get("max_articles", 15)
-
+            days_back = kwargs.get("days_back", 7)
+            max_articles = kwargs.get("max_articles", 50)
             articles = self._get_cached_news(company_name, ticker, days_back, max_articles)
             valid_articles = self._validate_articles(articles)
             if not valid_articles:
                 return self._create_no_data_result(ticker)
 
             texts = [f"{a.title}. {a.description}" for a in valid_articles]
-            structured_analysis = self._perform_structured_analysis(texts, valid_articles)
+            structured_analysis = self._perform_structured_analysis(texts)
             
             # Use BaseAgent LLM call
             summary_prompt = DATA_JOURNALIST_SUMMARY_PROMPT.format(
@@ -218,7 +217,7 @@ class DataJournalistAgent(BaseAgent):
         logger.info(f"Validated {len(valid)}/{len(articles)} articles after filtering")
         return valid
 
-    def _perform_structured_analysis(self, texts: List[str], articles: List[NewsArticle]) -> NewsAnalysisResult:
+    def _perform_structured_analysis(self, texts: List[str]) -> NewsAnalysisResult:
         logger.info(f"Performing sentiment & topic analysis on {len(texts)} texts...")
         scores, confs = [], []
         for t in texts:
