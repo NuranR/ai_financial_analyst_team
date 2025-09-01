@@ -1,12 +1,9 @@
-# Use Python 3.10 as base image
-FROM python:3.10-slim
+# Stage 1: Builder
+FROM python:3.10-slim-bullseye AS builder
 
 WORKDIR /app
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-
+# System dependencies for building wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -14,13 +11,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements-prod.txt .
 
-RUN pip install --no-cache-dir -r requirements-prod.txt
+RUN pip install --upgrade pip \
+    && pip install --prefix=/install --no-cache-dir -r requirements-prod.txt
+
+# Stage 2: Runtime
+FROM python:3.10-slim-bullseye
+
+WORKDIR /app
+
+# Environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MLFLOW_TRACKING_URI=/app/mlruns
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
 COPY . .
 
 EXPOSE 8501
-
-# Set environment variables for MLflow
-ENV MLFLOW_TRACKING_URI=/app/mlruns
 
 CMD ["streamlit", "run", "app.py", "--server.address", "0.0.0.0"]

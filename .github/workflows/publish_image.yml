@@ -2,9 +2,9 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: ['main', 'devTharindu', 'dev']
+    branches: ['prod']
   pull_request:
-    branches: ['main']
+    branches: ['prod']
   workflow_dispatch:
 
 env:
