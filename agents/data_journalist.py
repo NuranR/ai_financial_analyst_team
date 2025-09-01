@@ -10,15 +10,18 @@ import numpy as np
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from api.news_api import NewsAPI, MockNewsAPI
+from api.company_loookup_api import CompanyLookupAPI, MockCompanyLookupAPI
 from agents.base_agent import BaseAgent, AgentResult
 from config.prompts import DATA_JOURNALIST_SYSTEM_PROMPT, DATA_JOURNALIST_SUMMARY_PROMPT
-from config.settings import settings
 
-# Include cached api service here (ex:- yfinance)
 class CompanyLookupService:
     """Stub for company lookup service."""
+    def __init__(self, use_mock: bool = False):
+        self.news_api = MockCompanyLookupAPI() if use_mock else CompanyLookupAPI()
+
+    @lru_cache(maxsize=100)
     def get_company_name(self, ticker: str) -> str:
-        return f"Company_{ticker}"
+        return self.news_api.get_company_name(ticker)
 
 class Sentiment(str, Enum):
     BEARISH = "bearish"
