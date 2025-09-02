@@ -42,7 +42,7 @@ def main():
         "Analysis Period",
         ["1mo", "3mo", "6mo", "1y", "2y"],
         index=2,
-        help="Historical data period for analysis"
+        help="Historical data period for quantitative analysis"
     )
     
     max_articles = st.sidebar.slider(
@@ -50,7 +50,30 @@ def main():
         min_value=5,
         max_value=50,
         value=10,
-        help="Maximum number of news articles to analyze"
+        help="Maximum number of news articles to analyze for Data Journalist"
+    )
+
+    dj_days_back = st.sidebar.slider(
+        "News Days Back",
+        min_value=1,
+        max_value=30,
+        value=7,
+        help="Number of days back to fetch news for Data Journalist"
+    )
+
+    rs_filing_types = st.sidebar.multiselect(
+        "Regulator Filing Types",
+        ['10-K', '10-Q', '8-K', 'S-1', 'DEF 14A'],
+        default=['10-K', '10-Q', '8-K'],
+        help="Select SEC filing types for Regulator Specialist"
+    )
+
+    rs_max_filings = st.sidebar.slider(
+        "Max Regulator Filings",
+        min_value=1,
+        max_value=10,
+        value=5,
+        help="Maximum number of SEC filings to analyze for Regulator Specialist"
     )
     
     # Agent selection
@@ -90,7 +113,7 @@ def main():
             agent_status = "✅ Ready" if settings.gemini_api_key else "❌ No API Key"
             st.metric("Agent Status", agent_status)
         with col2:
-            data_sources = 2 if settings.gemini_api_key else 1  # Stock data always works
+            data_sources = 3 if settings.gemini_api_key else 1
             st.metric("Data Sources", data_sources)
         with col3:
             st.metric("Analysis Period", analysis_period)
@@ -149,7 +172,10 @@ def main():
             "Regulator Specialist": "✅" if run_regulator_specialist else "❌",
             "Lead Analyst": "✅" if run_lead_analyst else "❌",
             "Analysis Period": analysis_period,
-            "Max Articles": max_articles
+            "Max News Articles": max_articles,
+            "News Days Back": dj_days_back,
+            "Regulator Filing Types": ", ".join(rs_filing_types),
+            "Max Regulator Filings": rs_max_filings
         }
         
         for key, value in config_data.items():
@@ -166,7 +192,7 @@ def main():
                     with st.spinner("🔍 Analyzing financial news..."):
                         try:
                             agent = DataJournalistAgent()
-                            result = agent.analyze(ticker, max_articles=max_articles)
+                            result = agent.analyze(ticker, max_articles=max_articles, days_back=dj_days_back)
                             
                             st.success("✅ **Analysis Complete**")
                             
@@ -180,7 +206,7 @@ def main():
                             
                             date_range = result.metadata.get("date_range", {})
                             if date_range:
-                                st.caption(f"📅 Articles from **{date_range['oldest']}** → **{date_range['newest']}**")
+                                st.caption(f"📅 Articles from **{date_range['oldest'].split('T')[0]}** → **{date_range['newest'].split('T')[0]}**")
 
                             st.subheader("📊 Analysis Results")
                             st.write(result.analysis)
@@ -220,7 +246,7 @@ def main():
                         # Display results
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.metric("Confidence", f"{result.confidence_score}%")
+                            st.metric("Confidence", f"{result.confidence_score:.2f}%")
                         with col2:
                             if result.metadata.get('current_price'):
                                 st.metric("Current Price", f"${result.metadata['current_price']:.2f}")
@@ -262,26 +288,29 @@ def main():
                     with st.spinner("📋 Analyzing regulatory filings..."):
                         try:
                             agent = RegulatorSpecialistAgent()
-                            result = agent.analyze(ticker)
+                            result = agent.analyze(ticker, filing_types=rs_filing_types, max_filings=rs_max_filings)
                             
                             st.success("✅ **Analysis Complete**")
                             
                             # Display results
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Confidence", f"{result.confidence_score}%")
+                                st.metric("Confidence", f"{result.confidence_score*100:.1f}%")
                             with col2:
-                                st.metric("Filings Found", len(result.metadata.get('filings', [])))
+                                st.metric("Filings Found", result.metadata.get('filings_analyzed', 0))
                             
                             st.subheader("📊 Analysis Results")
                             st.write(result.analysis)
                             
-                            if result.metadata.get('filings'):
-                                st.subheader("📋 Recent Filings")
-                                for filing in result.metadata['filings'][:5]:
-                                    st.write(f"**{filing.get('form', 'Unknown')}** - {filing.get('filing_date', 'No date')}")
-                                    if filing.get('description'):
-                                        st.write(f"   {filing['description']}")
+                            if result.metadata.get('filings_analyzed') > 0:
+                                st.subheader("📋 Key Regulatory Insights")
+                                st.write(f"**Latest Filing**: {result.metadata.get('latest_filing', 'N/A')}")
+                                st.write(f"**Compliance Status**: {result.metadata.get('compliance_status', 'N/A')}")
+                                st.write(f"**Regulatory Health**: {result.metadata.get('regulatory_health', 'N/A')}")
+                                if result.metadata.get('risk_signals'):
+                                    st.write("**Risk Signals**: " + ", ".join(result.metadata['risk_signals']))
+                                else:
+                                    st.write("**Risk Signals**: None detected")
                         
                         except Exception as e:
                             st.error(f"❌ **Error**: {str(e)}")
@@ -307,7 +336,7 @@ def main():
                             if run_data_journalist:
                                 st.write("📰 Running Data Journalist...")
                                 agent = DataJournalistAgent()
-                                results['news'] = agent.analyze(ticker, max_articles=max_articles)
+                                results['news'] = agent.analyze(ticker, max_articles=max_articles, days_back=dj_days_back)
                             
                             if run_quant_analyst:
                                 st.write("📈 Running Quantitative Analyst...")
@@ -317,7 +346,7 @@ def main():
                             if run_regulator_specialist:
                                 st.write("📋 Running Regulator Specialist...")
                                 agent = RegulatorSpecialistAgent()
-                                results['regulatory'] = agent.analyze(ticker)
+                                results['regulatory'] = agent.analyze(ticker, filing_types=rs_filing_types, max_filings=rs_max_filings)
                             
                             # Now run lead analyst with all results
                             st.write("🎯 Synthesizing insights...")
@@ -329,7 +358,7 @@ def main():
                             # Display final recommendation
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Overall Confidence", f"{final_result.confidence_score}%")
+                                st.metric("Overall Confidence", f"{final_result.confidence_score*100:.1f}%")
                             with col2:
                                 if final_result.metadata.get('recommendation'):
                                     st.metric("Recommendation", final_result.metadata['recommendation'].upper())
