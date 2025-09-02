@@ -7,7 +7,6 @@ from loguru import logger
 from agents.base_agent import BaseAgent, AgentResult
 from data.sec_filings import SECFilingsFetcher
 from config.prompts import REGULATOR_SPECIALIST_SYSTEM_PROMPT, REGULATOR_SPECIALIST_ANALYSIS_PROMPT
-from config.settings import settings
 
 
 class RegulatorSpecialistAgent(BaseAgent):
@@ -69,6 +68,14 @@ class RegulatorSpecialistAgent(BaseAgent):
                 md_and_a=analysis_data['compliance_summary']
             )
             
+            # Enrich prompt with recent filings summary and highlight unusual events
+            recent_filings = filing_data.get('filings', [])
+            unusual_events = [f for f in recent_filings if f['form_type'] == '8-K']
+            if unusual_events:
+                analysis_prompt += f"\n\nUnusual Events (8-K filings):\n"
+                for event in unusual_events:
+                    analysis_prompt += f"• {event['filing_date']}: {event['description']}\n"
+
             analysis = self._call_llm(analysis_prompt, REGULATOR_SPECIALIST_SYSTEM_PROMPT)
             
             # Calculate confidence based on data availability and recency
