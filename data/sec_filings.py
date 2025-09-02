@@ -53,23 +53,31 @@ class SECFilingsFetcher:
             
             # Extract recent filings
             recent_filings = []
-            filings = data.get('filings', {}).get('recent', {})
+            filings = data.get("filings", {}).get("recent", {})
             
             if filings:
-                for i in range(min(len(filings.get('form', [])), 50)):  # Check last 50 filings
+                keys_to_check = ['form', 'filingDate', 'accessionNumber', 'primaryDocument']
+                min_len = min(len(filings.get(k, [])) for k in keys_to_check)
+
+                for i in range(min(min_len, 1000)):
                     form = filings['form'][i]
                     if form in filing_types:
                         filing_date = filings['filingDate'][i]
-                        filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{filings['accessionNumber'][i].replace('-', '')}/{filings['primaryDocument'][i]}"
-                        
+                        filing_url = (
+                            f"https://www.sec.gov/Archives/edgar/data/"
+                            f"{cik}/{filings['accessionNumber'][i].replace('-', '')}/"
+                            f"{filings['primaryDocument'][i]}"
+                        )
+
                         recent_filings.append({
                             'form_type': form,
                             'filing_date': filing_date,
-                            'description': filings.get('description', [''])[i],
+                            'description': (
+                                filings.get('description', [''] * min_len)[i]
+                            ),
                             'url': filing_url,
                             'accession_number': filings['accessionNumber'][i]
                         })
-                        
                         if len(recent_filings) >= limit:
                             break
             
@@ -95,9 +103,25 @@ class SECFilingsFetcher:
             return self._get_mock_filing_data(ticker)
     
     def _get_cik_from_ticker(self, ticker: str) -> Optional[int]:
-        """Get CIK number from ticker symbol."""
-        # This is a simplified mapping - in practice, you'd use SEC's company tickers JSON
-        ticker_to_cik = {
+        """Get CIK number from ticker symbol using SEC's official mapping."""
+        try:
+            url = "https://www.sec.gov/files/company_tickers.json"
+            headers = {"User-Agent": "Contact@Email.com"}  
+            
+            response = requests.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                for entry in data.values():
+                    if entry['ticker'].upper() == ticker.upper():
+                        return int(entry['cik_str'])
+            
+            logger.warning(f"CIK not found for ticker {ticker}, using fallback mapping.")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching CIK for {ticker}: {e}")
+        # Fallback mapping
+        mock_ticker_to_cik = {
             'AAPL': 320193,
             'MSFT': 789019,
             'GOOGL': 1652044,
@@ -109,7 +133,7 @@ class SECFilingsFetcher:
             'NVDA': 1045810,
             'AMD': 2488
         }
-        return ticker_to_cik.get(ticker.upper())
+        return mock_ticker_to_cik.get(ticker.upper())
     
     def _get_mock_filing_data(self, ticker: str) -> Dict[str, Any]:
         """Return mock SEC filing data for demonstration."""
@@ -170,8 +194,15 @@ class SECFilingsFetcher:
             if '8-K' in recent_forms[:3]:  # Recent 8-K filing
                 risk_signals.append("Recent material event disclosure (8-K)")
             
-            if filing_frequency.get('10-K', 0) == 0:
-                risk_signals.append("No recent annual report available")
+            ten_k_filings = [f for f in filings if f['form_type'] == '10-K']
+            if ten_k_filings:
+                latest_10k = max(
+                    ten_k_filings, 
+                    key=lambda f: datetime.fromisoformat(f['filing_date'])
+                )
+                days_since_10k = (datetime.now() - datetime.fromisoformat(latest_10k['filing_date'])).days
+                if days_since_10k > 365:
+                    risk_signals.append("No recent 10-K (annual report older than 12 months)")
             
             # Compliance assessment
             latest_filing = filings[0] if filings else None
