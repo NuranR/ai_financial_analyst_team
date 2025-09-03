@@ -192,13 +192,13 @@ def main():
                     with st.spinner("🔍 Analyzing financial news..."):
                         try:
                             agent = DataJournalistAgent()
-                            result = agent.analyze(ticker, max_articles=max_articles, days_back=dj_days_back)
+                            result = agent.analyze(ticker, max_articles=max_articles, days_back=dj_days_back) 
                             
                             st.success("✅ **Analysis Complete**")
                             
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("Confidence", f"{result.confidence_score*100:.1f}%")
+                                st.metric("Confidence", f"{result.confidence_score*100:.1f}%") 
                             with col2:
                                 st.metric("Articles", result.metadata.get("articles_analyzed", 0))
                             with col3:
@@ -211,13 +211,19 @@ def main():
                             st.subheader("📊 Analysis Results")
                             st.write(result.analysis)
 
-                            if "structured_data" in result.dict() and result.structured_data.get("key_themes"):
+                            if result.structured_data.get("key_themes"):
                                 st.subheader("🔑 Key Themes")
                                 st.write(", ".join(result.structured_data["key_themes"]))
 
+                            if result.structured_data.get("potential_catalysts"):
+                                st.subheader("⚡ Potential Catalysts")
+                                for i, catalyst in enumerate(result.structured_data["potential_catalysts"], 1):
+                                    st.markdown(f"**{i}. {catalyst['event_type'].replace('_', ' ').title()}**: {catalyst['description']}")
+                                    st.divider()
+
                             if result.metadata.get("articles"):
                                 st.subheader("📰 Top Articles")
-                                for i, article in enumerate(result.metadata['articles'][:5], 1):
+                                for i, article in enumerate(result.metadata['articles'], 1):
                                     st.markdown(f"**{i}. [{article.get('title','No title')}]({article.get('url','')})**")
                                     if article.get('description'):
                                         st.caption(article['description'][:150] + "...")
@@ -240,38 +246,62 @@ def main():
                     try:
                         agent = QuantitativeAnalystAgent()
                         result = agent.analyze(ticker, period=analysis_period)
-                        
                         st.success("✅ **Analysis Complete**")
-                        
-                        # Display results
+            
+                        structured_data = result.structured_data
+
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.metric("Confidence", f"{result.confidence_score:.2f}%")
+                            st.metric("Confidence", f"{result.confidence_score*100:.1f}%")
                         with col2:
-                            if result.metadata.get('current_price'):
-                                st.metric("Current Price", f"${result.metadata['current_price']:.2f}")
+                            current_price = structured_data.get('price_analysis', {}).get('current_price', 'N/A')
+                            if current_price != 'N/A':
+                                st.metric("Current Price", f"${current_price:.2f}")
+                            else:
+                                st.metric("Current Price", "N/A")
                         
-                        st.subheader("📊 Analysis Results")
-                        st.write(result.analysis)
-                        
-                        # Show key metrics if available
-                        if result.metadata.get('metrics'):
-                            st.subheader("📈 Key Metrics")
-                            metrics = result.metadata['metrics']
+                        st.markdown("---")
+                        st.markdown("📊 **Analysis Details**")
+
+                        # Price Analysis
+                        st.subheader("PRICE ANALYSIS")
+                        price_analysis = structured_data.get('price_analysis', {})
+                        st.markdown(f"• **Current trend:** {price_analysis.get('current_trend', 'N/A')}, below Period High, recent 1-day drop of {price_analysis.get('price_change_1d_pct', 'N/A')}%.")
+                        st.markdown(f"• **Key levels:** Resistance at ${price_analysis.get('resistance', 'N/A')}, support near ${price_analysis.get('support', 'N/A')}.")
+                        st.markdown(f"• **Volatility:** {price_analysis.get('volatility', 'N/A'):.1%}, indicating significant price fluctuations.")
+                        st.write("") # Spacing
+
+                        # Technical Signals
+                        st.subheader("TECHNICAL SIGNALS")
+                        tech_signals = structured_data.get('technical_signals', {})
+                        st.markdown(f"• **RSI:** {tech_signals.get('rsi', 'N/A')} ({tech_signals.get('rsi_signal', 'N/A')}), suggesting neither overbought nor oversold conditions.")
+                        st.markdown(f"• **Moving Averages:** Price is currently {tech_signals.get('price_vs_sma20', 'N/A')} the SMA20, indicating short-term weakness.")
+                        st.markdown(f"• **Trading Momentum:** {tech_signals.get('momentum_signal', 'N/A')}, with a 10-day Momentum at {tech_signals.get('10d_momentum', 'N/A')}%.")
+                        st.markdown(f"• **Volume:** {tech_signals.get('volume_signal', 'N/A')} signal.")
+                        st.write("") # Spacing
+
+                        # Anomalies & Risks
+                        st.subheader("ANOMALIES & RISKS")
+                        anomalies_risks = structured_data.get('anomalies_risks', {})
+                        if anomalies_risks.get('recent_price_anomalies'):
+                            st.markdown("• **Price Anomalies:** " + ", ".join(anomalies_risks['recent_price_anomalies']) + " suggest potential instability or reaction to news.")
+                        else:
+                            st.markdown("• **Price Anomalies:** None detected recently.")
+
+                        if anomalies_risks.get('recent_volume_anomalies'):
+                            st.markdown("• **Volume Anomalies:** " + ", ".join(anomalies_risks['recent_volume_anomalies']) + " potentially correlated with price movements, indicating strong selling pressure on Aug 1st.")
+                        else:
+                            st.markdown("• **Volume Anomalies:** None detected recently.")
                             
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                if 'volatility' in metrics:
-                                    st.metric("Volatility", f"{metrics['volatility']:.1%}")
-                            with col2:
-                                if 'return' in metrics:
-                                    st.metric("Period Return", f"{metrics['return']:.1%}")
-                            with col3:
-                                if 'trend' in metrics:
-                                    st.metric("Trend", metrics['trend'])
-                    
+                        st.markdown(f"• **Risk Factors:** {anomalies_risks.get('risk_factors', 'N/A')}")
+                        st.write("")
+                        st.markdown("---")
+
+                        st.subheader("BOTTOM LINE")
+                        st.write(structured_data.get('bottom_line', 'N/A'))
+                        
                     except Exception as e:
-                        st.error(f"❌ **Error**: {str(e)}")
+                        st.error(f"❌ **Error during Quantitative Analysis**: {str(e)}")
             else:
                 st.info("👆 **Click 'Run Analysis' in the sidebar to start**")
         else:

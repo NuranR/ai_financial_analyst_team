@@ -73,35 +73,67 @@ Your role is to analyze historical stock data and identify unusual patterns that
 """
 
 QUANT_ANALYST_ANALYSIS_PROMPT = """
-Analyze the following quantitative data for {company_name} ({ticker}):
+You are a highly skilled Quantitative Analyst. Your task is to provide a concise, structured, and insightful quantitative analysis of {company_name} (Ticker: {ticker}).
+Focus on key metrics, trends, and anomalies from the provided data.
 
-Stock Price Data:
+**Here is the raw data for your analysis:**
+
+**Price Data Summary:**
 {price_data}
 
-Volume Data:
+**Volume Data Summary:**
 {volume_data}
 
-Anomaly Detection Results:
+**Anomaly and Technical Indicator Summary:**
 {anomaly_results}
+{technical_indicators}
 
-Provide a CONCISE quantitative analysis (maximum 300 words) in this EXACT format:
+---
+
+**Based on the data above, generate a comprehensive quantitative analysis following this exact structure:**
+
+📈 Quantitative Analysis: Results for {ticker}
+✅ Analysis Complete
+
+Confidence
+
+[CONFIDENCE_SCORE]%
+Current Price
+
+[CURRENT_PRICE]
+📊 Analysis Details
 
 **PRICE ANALYSIS**
-• Current trend and key levels
-• Volatility assessment
+• Current trend: [SUMMARIZE_CURRENT_TREND]. Key levels: Resistance at [RESISTANCE_LEVEL], support near [SUPPORT_LEVEL].
+• Volatility: [VOLATILITY_PERCENTAGE]%, indicating [VOLATILITY_DESCRIPTION].
 
-**TECHNICAL SIGNALS** 
-• Key indicators and signals
-• Trading momentum
+**TECHNICAL SIGNALS**
+• RSI: [RSI_VALUE] ([RSI_SIGNAL]), suggesting [RSI_CONDITION]. Price [PRICE_VS_SMA20_SIGNAL] SMA20 indicates short-term [WEAKNESS_STRENGTH].
+• Trading momentum: [MOMENTUM_SIGNAL], 10-day Momentum at [MOMENTUM_VALUE]%. Volume signal is [VOLUME_SIGNAL].
 
 **ANOMALIES & RISKS**
-• Notable patterns detected
-• Risk factors
+• Price Anomalies: [SUMMARIZE_PRICE_ANOMALIES].
+• Volume Anomalies: [SUMMARIZE_VOLUME_ANOMALIES].
+• Risk Factors: [SUMMARIZE_RISK_FACTORS].
 
 **BOTTOM LINE**
-• Overall assessment in 1-2 sentences
+[PROVIDE_CONCISE_BOTTOM_LINE_SUMMARY]
 
-Keep it professional but brief. Use bullet points, avoid lengthy explanations.
+---
+
+**Instructions for filling the structure:**
+- Replace `[CONFIDENCE_SCORE]` with the calculated confidence.
+- Replace `[CURRENT_PRICE]` with the current price.
+- `[SUMMARIZE_CURRENT_TREND]`: e.g., "Downtrending, below Period High, recent 1-day drop of -1.6%."
+- `[RESISTANCE_LEVEL]`, `[SUPPORT_LEVEL]`, `[VOLATILITY_PERCENTAGE]`, `[VOLATILITY_DESCRIPTION]` (e.g., "significant price fluctuations").
+- `[RSI_VALUE]`, `[RSI_SIGNAL]`, `[RSI_CONDITION]` (e.g., "neither overbought nor oversold conditions").
+- `[PRICE_VS_SMA20_SIGNAL]` (e.g., "below"), `[WEAKNESS_STRENGTH]` (e.g., "weakness").
+- `[MOMENTUM_SIGNAL]`, `[MOMENTUM_VALUE]`, `[VOLUME_SIGNAL]`.
+- `[SUMMARIZE_PRICE_ANOMALIES]`: Mention recent spikes and drops (e.g., "Recent spikes (April, May) and a significant drop (August 1st) suggest potential instability or reaction to news.").
+- `[SUMMARIZE_VOLUME_ANOMALIES]`: Describe high volume on specific dates and their implications (e.g., "High volume on June 27th, July 31st, and August 1st, potentially correlated with price movements. The August 1st drop coincides with high volume, indicating strong selling pressure.").
+- `[SUMMARIZE_RISK_FACTORS]`: Combine high volatility, recent drops, and volume spikes.
+- `[PROVIDE_CONCISE_BOTTOM_LINE_SUMMARY]`: A final, actionable sentence or two summarizing the overall outlook.
+- Ensure all numerical values are correctly formatted (e.g., percentages with one decimal, currency with two decimals).
 """
 
 # Regulator Specialist Agent Prompts
