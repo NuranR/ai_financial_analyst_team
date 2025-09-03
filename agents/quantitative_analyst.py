@@ -22,7 +22,7 @@ class QuantitativeAnalystAgent(BaseAgent):
     - Identify potential trading signals
     """
     
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__("Quantitative Analyst")
         self.stock_fetcher = StockDataFetcher()
     
@@ -58,23 +58,22 @@ class QuantitativeAnalystAgent(BaseAgent):
             # Calculate additional metrics
             technical_metrics = self._calculate_technical_metrics(stock_data) if include_technical else {}
             
-            # Prepare data for LLM analysis
-            analysis_data = self._format_data_for_analysis(stock_data, anomalies, technical_metrics)
+            formatted_data, structured_output_components = self._format_data_for_analysis(stock_data, anomalies, technical_metrics)
             
-            # Generate analysis using LLM
             analysis_prompt = QUANT_ANALYST_ANALYSIS_PROMPT.format(
                 company_name=stock_data['company_info']['name'],
                 ticker=ticker,
-                price_data=analysis_data['price_summary'],
-                volume_data=analysis_data['volume_summary'],
-                anomaly_results=analysis_data['anomaly_summary']
+                price_data=formatted_data['price_summary'],
+                volume_data=formatted_data['volume_summary'],
+                anomaly_results=formatted_data['anomaly_summary'],
+                technical_indicators=formatted_data['tech_summary']
             )
             
-            analysis = self._call_llm(analysis_prompt, QUANT_ANALYST_SYSTEM_PROMPT)
+            llm_analysis_text = self._call_llm(analysis_prompt, QUANT_ANALYST_SYSTEM_PROMPT)
             
             # Calculate confidence based on data quality and completeness
             confidence = self._calculate_confidence_score(
-                analysis,
+                llm_analysis_text,
                 data_quality=self._assess_data_quality(stock_data),
                 anomaly_significance=self._assess_anomaly_significance(anomalies),
                 data_completeness=stock_data['data_points'] / 252  # Assume 252 trading days per year
@@ -88,7 +87,9 @@ class QuantitativeAnalystAgent(BaseAgent):
                 'price_anomalies': len(anomalies.get('price_anomalies', [])),
                 'volume_anomalies': len(anomalies.get('volume_anomalies', [])),
                 'technical_indicators': list(technical_metrics.keys()) if technical_metrics else [],
-                'analysis_timestamp': datetime.now().isoformat()
+                'analysis_timestamp': datetime.now().isoformat(),
+                'structured_analysis': structured_output_components,
+                'llm_raw_analysis': llm_analysis_text 
             }
             
             logger.info(f"Completed quantitative analysis for {ticker}")
@@ -96,9 +97,10 @@ class QuantitativeAnalystAgent(BaseAgent):
             return AgentResult(
                 agent_name=self.name,
                 company_ticker=ticker,
-                analysis=analysis,
+                analysis=llm_analysis_text,
                 confidence_score=confidence,
-                metadata=metadata
+                metadata=metadata,
+                structured_data=structured_output_components
             )
             
         except Exception as e:
@@ -143,9 +145,8 @@ class QuantitativeAnalystAgent(BaseAgent):
             
             # Support and Resistance levels
             if len(closes) >= 20:
-                recent_closes = closes[-20:]
-                metrics['support_level'] = round(np.min(recent_closes), 2)
-                metrics['resistance_level'] = round(np.max(recent_closes), 2)
+                metrics['support_level'] = round(np.min(closes[-min(len(closes), 60):]), 2) # e.g., last 60 days
+                metrics['resistance_level'] = round(np.max(closes[-min(len(closes), 60):]), 2) # e.g., last 60 days
             
             # Price momentum
             if len(closes) >= 10:
@@ -153,13 +154,20 @@ class QuantitativeAnalystAgent(BaseAgent):
                 metrics['10d_momentum'] = round(momentum, 2)
                 metrics['momentum_signal'] = 'bullish' if momentum > 5 else 'bearish' if momentum < -5 else 'neutral'
             
-            # Volume analysis
             if volumes is not None and len(volumes) >= 20:
                 avg_volume = np.mean(volumes[-20:])
                 recent_volume = volumes[-1]
                 metrics['volume_ratio'] = round(recent_volume / avg_volume, 2)
                 metrics['volume_signal'] = 'high' if metrics['volume_ratio'] > 1.5 else 'low' if metrics['volume_ratio'] < 0.5 else 'normal'
             
+            if 'price_change_pct_1d' in stock_data:
+                if stock_data['price_change_pct_1d'] > 0.5:
+                    metrics['current_trend_short'] = 'Uptrending'
+                elif stock_data['price_change_pct_1d'] < -0.5:
+                    metrics['current_trend_short'] = 'Downtrending'
+                else:
+                    metrics['current_trend_short'] = 'Sideways'
+
             return metrics
             
         except Exception as e:
@@ -168,6 +176,9 @@ class QuantitativeAnalystAgent(BaseAgent):
     
     def _calculate_rsi(self, closes: np.ndarray, period: int = 14) -> float:
         """Calculate Relative Strength Index."""
+        if len(closes) < period + 1:
+            return np.nan
+
         deltas = np.diff(closes)
         gains = np.where(deltas > 0, deltas, 0)
         losses = np.where(deltas < 0, -deltas, 0)
@@ -176,7 +187,7 @@ class QuantitativeAnalystAgent(BaseAgent):
         avg_loss = np.mean(losses[-period:])
         
         if avg_loss == 0:
-            return 100
+            return 100 if avg_gain > 0 else 50
         
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
@@ -184,60 +195,107 @@ class QuantitativeAnalystAgent(BaseAgent):
     
     def _format_data_for_analysis(self, stock_data: Dict[str, Any], 
                                  anomalies: Dict[str, Any], 
-                                 technical_metrics: Dict[str, Any]) -> Dict[str, str]:
-        """Format data for LLM analysis."""
-        
-        # Price summary
-        price_summary = f"""
-Current Price: ${stock_data['current_price']}
-1-Day Change: ${stock_data['price_change_1d']} ({stock_data['price_change_pct_1d']}%)
-Period High: ${stock_data['period_high']}
-Period Low: ${stock_data['period_low']}
-Period Return: {stock_data['period_return_pct']}%
+                                 technical_metrics: Dict[str, Any]) -> (Dict[str, str], Dict[str, Any]):
+        """
+        Format data for LLM analysis and also provide structured components
+        for direct display in the UI.
+        """
+        structured_components = {
+            'price_analysis': {},
+            'technical_signals': {},
+            'anomalies_risks': {},
+            'bottom_line': ""
+        }
+
+        price_summary_text = f"""
+Current Price: ${stock_data['current_price']:.2f}
+1-Day Change: ${stock_data['price_change_1d']:.2f} ({stock_data['price_change_pct_1d']:.1f}%)
+Period High: ${stock_data['period_high']:.2f}
+Period Low: ${stock_data['period_low']:.2f}
+Period Return: {stock_data['period_return_pct']:.1f}%
 Volatility: {stock_data['volatility']:.1%}
+Current Trend: {technical_metrics.get('current_trend_short', 'N/A')}, below Period High, recent 1-day drop of {stock_data['price_change_pct_1d']:.1f}%.
+Key levels: Resistance at ${technical_metrics.get('resistance_level', 'N/A')}, support near ${technical_metrics.get('support_level', 'N/A')}.
 """
-        
-        # Volume summary
-        volume_summary = ""
+        structured_components['price_analysis'] = {
+            'current_price': stock_data['current_price'],
+            'price_change_1d_pct': stock_data['price_change_pct_1d'],
+            'period_high': stock_data['period_high'],
+            'period_low': stock_data['period_low'],
+            'volatility': stock_data['volatility'],
+            'current_trend': technical_metrics.get('current_trend_short', 'N/A'),
+            'resistance': technical_metrics.get('resistance_level', 'N/A'),
+            'support': technical_metrics.get('support_level', 'N/A')
+        }
+
+        volume_summary_text = ""
         if stock_data['volume_data']:
-            volume_summary = f"""
+            volume_summary_text = f"""
 Average Volume: {stock_data['volume_data']['avg_volume']:,.0f}
 Volume Trend: {stock_data['volume_data']['volume_trend']}
 Latest Volume: {stock_data['volume_data']['volume'][-1]:,.0f}
 """
-        
-        # Anomaly summary
-        anomaly_summary = f"""
+
+        anomaly_summary_text = f"""
 Price Anomalies Detected: {len(anomalies.get('price_anomalies', []))}
 Volume Anomalies Detected: {len(anomalies.get('volume_anomalies', []))}
 Volatility Assessment: {anomalies.get('volatility_assessment', 'unknown')}
 
 Recent Price Anomalies:
 """
+        recent_price_anomalies_list = []
         for anomaly in anomalies.get('price_anomalies', [])[-3:]:  # Last 3
-            anomaly_summary += f"- {anomaly['date']}: {anomaly['type']} of {anomaly['return']}% (severity: {anomaly['severity']:.1f})\n"
+            anomaly_summary_text += f"- {anomaly['date']}: {anomaly['type']} of {anomaly['return']:.1f}% (severity: {anomaly['severity']:.1f})\n"
+            recent_price_anomalies_list.append(f"{anomaly['date']}: {anomaly['type']} of {anomaly['return']:.1f}%")
         
+        recent_volume_anomalies_list = []
         if anomalies.get('volume_anomalies'):
-            anomaly_summary += "\nRecent Volume Anomalies:\n"
+            anomaly_summary_text += "\nRecent Volume Anomalies:\n"
             for anomaly in anomalies.get('volume_anomalies', [])[-3:]:  # Last 3
-                anomaly_summary += f"- {anomaly['date']}: {anomaly['vs_average']:.1f}x average volume\n"
-        
-        # Technical indicators summary
+                anomaly_summary_text += f"- {anomaly['date']}: {anomaly['vs_average']:.1f}x average volume\n"
+                recent_volume_anomalies_list.append(f"{anomaly['date']}: {anomaly['vs_average']:.1f}x avg volume")
+
+        structured_components['anomalies_risks'] = {
+            'price_anomalies_count': len(anomalies.get('price_anomalies', [])),
+            'volume_anomalies_count': len(anomalies.get('volume_anomalies', [])),
+            'volatility_assessment': anomalies.get('volatility_assessment', 'unknown'),
+            'recent_price_anomalies': recent_price_anomalies_list,
+            'recent_volume_anomalies': recent_volume_anomalies_list,
+            'risk_factors': "High volatility, recent price drops, and volume spikes warrant caution." # General risk statement
+        }
+
+        tech_summary_text = ""
         if technical_metrics:
-            tech_summary = f"""
+            tech_summary_text = f"""
 Technical Indicators:
 - RSI: {technical_metrics.get('rsi', 'N/A')} ({technical_metrics.get('rsi_signal', 'N/A')})
 - Price vs SMA20: {technical_metrics.get('price_vs_sma20', 'N/A')}
 - 10-day Momentum: {technical_metrics.get('10d_momentum', 'N/A')}% ({technical_metrics.get('momentum_signal', 'N/A')})
 - Volume Signal: {technical_metrics.get('volume_signal', 'N/A')}
 """
-            anomaly_summary += tech_summary
+            structured_components['technical_signals'] = {
+                'rsi': technical_metrics.get('rsi', 'N/A'),
+                'rsi_signal': technical_metrics.get('rsi_signal', 'N/A'),
+                'price_vs_sma20': technical_metrics.get('price_vs_sma20', 'N/A'),
+                '10d_momentum': technical_metrics.get('10d_momentum', 'N/A'),
+                'momentum_signal': technical_metrics.get('momentum_signal', 'N/A'),
+                'volume_signal': technical_metrics.get('volume_signal', 'N/A')
+            }
         
-        return {
-            'price_summary': price_summary,
-            'volume_summary': volume_summary,
-            'anomaly_summary': anomaly_summary
+        structured_components['bottom_line'] = (
+            f"{stock_data['company_info']['name'] or 'The stock'} exhibits high volatility and recent negative "
+            f"price action coupled with high volume, suggesting potential for further downside. "
+            f"Monitoring volume and price action around key support levels is crucial."
+        )
+
+        llm_formatted_data = {
+            'price_summary': price_summary_text,
+            'volume_summary': volume_summary_text,
+            'anomaly_summary': anomaly_summary_text,
+            'tech_summary': tech_summary_text
         }
+
+        return llm_formatted_data, structured_components
     
     def _assess_data_quality(self, stock_data: Dict[str, Any]) -> float:
         """Assess the quality of the stock data."""
