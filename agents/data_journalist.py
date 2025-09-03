@@ -2,6 +2,8 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 from functools import lru_cache
 import json
+import re
+from collections import Counter
 
 from loguru import logger
 from pydantic import BaseModel, Field, HttpUrl, field_validator
@@ -13,6 +15,11 @@ from api.news_api import NewsAPI, MockNewsAPI
 from api.company_loookup_api import CompanyLookupAPI, MockCompanyLookupAPI
 from agents.base_agent import BaseAgent, AgentResult
 from config.prompts import DATA_JOURNALIST_SYSTEM_PROMPT, DATA_JOURNALIST_SUMMARY_PROMPT
+
+import nltk
+from nltk.corpus import stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
 
 class CompanyLookupService:
     """Stub for company lookup service."""
@@ -42,8 +49,6 @@ class FinancialEventType(str, Enum):
 class Catalyst(BaseModel):
     description: str
     event_type: FinancialEventType
-    expected_impact: str
-    confidence: float = Field(..., ge=0, le=1)
 
 class NewsAnalysisResult(BaseModel):
     overall_sentiment: Sentiment
@@ -111,7 +116,14 @@ class TopicModeler:
     def __init__(self):
         try:
             from bertopic import BERTopic
-            self._topic_model = BERTopic(verbose=True)
+            from bertopic.representation import KeyBERTInspired
+            representation_model = KeyBERTInspired()
+            self._topic_model = BERTopic(
+                verbose=True,
+                representation_model=representation_model,
+                nr_topics="auto",
+                min_topic_size=5 
+            )
             self._is_initialized = False
         except ImportError:
             logger.warning("BERTopic not installed. Using simple keyword extraction.")
@@ -120,7 +132,7 @@ class TopicModeler:
     def extract_topics(self, texts: List[str]) -> List[str]:
         if not texts:
             return []
-        if self._topic_model:
+        if self._topic_model and len(texts) >= self._topic_model.min_topic_size:
             try:
                 if not self._is_initialized:
                     topics, _ = self._topic_model.fit_transform(texts)
@@ -128,19 +140,35 @@ class TopicModeler:
                 else:
                     topics, _ = self._topic_model.transform(texts)
                 topic_info = self._topic_model.get_topic_info()
-                return topic_info['Name'].head(5).tolist()
+                meaningful_topics = [
+                    info['Name'] for _, info in topic_info.iterrows()
+                    if info['Topic'] != -1 and info['Name'] != ""
+                ]
+                
+                cleaned_topics = []
+                for topic_name in meaningful_topics:
+                    cleaned_name = re.sub(r'^-?\d+_', '', topic_name)
+                    cleaned_name = cleaned_name.replace('_', ' ').strip()
+                    if cleaned_name:
+                        cleaned_topics.append(cleaned_name)
+
+                return cleaned_topics[:5] 
             except Exception as e:
-                logger.warning(f"Topic modeling failed: {e}")
+                logger.warning(f"BERTopic topic modeling failed: {e}")
                 return self._fallback_topic_extraction(texts)
-        return self._fallback_topic_extraction(texts)
+        else:
+            if self._topic_model and len(texts) < self._topic_model.min_topic_size:
+                logger.warning(f"Not enough texts ({len(texts)}) for BERTopic (min_topic_size={self._topic_model.min_topic_size}). Falling back to keyword extraction.")
+            return self._fallback_topic_extraction(texts)
 
     def _fallback_topic_extraction(self, texts: List[str]) -> List[str]:
-        import re
-        from collections import Counter
-        words = []
+        all_words = []
         for text in texts:
-            words.extend(re.findall(r'\b[A-Z][a-z]+\b', text))
-        counts = Counter(words)
+            all_words.extend(re.findall(r'\b[A-Z][a-z]+\b', text))
+            all_words.extend(re.findall(r'\b(?:stock|market|earnings|product|launch|investment|analyst|share|revenue)\b', text, re.IGNORECASE))
+        
+        filtered_words = [word for word in all_words if word.lower() not in map(str.lower, stop_words) and len(word) > 2]
+        counts = Counter(filtered_words)
         return [w for w, _ in counts.most_common(5)]
 
 
@@ -163,13 +191,15 @@ class DataJournalistAgent(BaseAgent):
             company_name = kwargs.get("company_name") or self.lookup_service.get_company_name(ticker)
             days_back = kwargs.get("days_back", 7)
             max_articles = kwargs.get("max_articles", 50)
-            articles = self._get_cached_news(company_name, ticker, days_back, max_articles)
-            valid_articles = self._validate_articles(articles)
+            raw_articles = self._get_cached_news(company_name, ticker, days_back, max_articles)
+            valid_articles = self._validate_articles(raw_articles)
+            
             if not valid_articles:
                 return self._create_no_data_result(ticker)
 
             texts = [f"{a.title}. {a.description}" for a in valid_articles]
-            structured_analysis = self._perform_structured_analysis(texts)
+            
+            structured_analysis = self._perform_structured_analysis(texts, valid_articles)
             
             # Use BaseAgent LLM call
             summary_prompt = DATA_JOURNALIST_SUMMARY_PROMPT.format(
@@ -180,23 +210,23 @@ class DataJournalistAgent(BaseAgent):
             llm_summary = self._call_llm(summary_prompt, DATA_JOURNALIST_SYSTEM_PROMPT)
             structured_analysis.summary = llm_summary
 
-            confidence = self._calculate_confidence_score(valid_articles, structured_analysis)
+            overall_confidence = self._calculate_overall_confidence(valid_articles, structured_analysis)
             metadata = self._prepare_metadata(valid_articles, structured_analysis)
 
             return AgentResult(
                 agent_name=self.name,
                 company_ticker=ticker,
                 analysis=llm_summary,
-                confidence_score=confidence,
+                confidence_score=overall_confidence,
                 structured_data=structured_analysis.dict(),
                 metadata=metadata
             )
         except Exception as e:
-            logger.error(f"Error in news analysis: {e}")
+            logger.error(f"Error in news analysis for {ticker}: {e}")
             return AgentResult(
                 agent_name=self.name,
                 company_ticker=ticker,
-                analysis="Analysis failed due to technical error.",
+                analysis="Analysis failed due to technical error. Please try again later.",
                 confidence_score=0.0,
                 errors=str(e)
             )
@@ -212,95 +242,156 @@ class DataJournalistAgent(BaseAgent):
         for a in articles:
             try:
                 article = NewsArticle(**a)
-                if len(article.title) > 10 and article.relevance_score > 0.1:
+                if len(article.title) > 15 and article.relevance_score > 0.2:
                     valid.append(article)
             except Exception as e:
-                logger.warning(f"Invalid article skipped: {e}")
+                logger.warning(f"Invalid article skipped: {e} - Data: {a.get('title', 'N/A')}")
                 continue
         logger.info(f"Validated {len(valid)}/{len(articles)} articles after filtering")
         return valid
 
-    def _perform_structured_analysis(self, texts: List[str]) -> NewsAnalysisResult:
+    def _perform_structured_analysis(self, texts: List[str], articles: List[NewsArticle]) -> NewsAnalysisResult:
         logger.info(f"Performing sentiment & topic analysis on {len(texts)} texts...")
         scores, confs = [], []
         for t in texts:
             s, c = self.sentiment_analyzer.analyze_text(t)
             scores.append(s)
             confs.append(c)
-        avg_score = float(np.mean(scores)) if scores else 0.0
-        avg_conf = float(np.mean(confs)) if confs else 0.0
-        overall = (Sentiment.BULLISH if avg_score > 0.1 else
-                   Sentiment.BEARISH if avg_score < -0.1 else
-                   Sentiment.NEUTRAL)
-        result =  NewsAnalysisResult(
-            overall_sentiment=overall,
-            sentiment_score=avg_score,
-            sentiment_confidence=avg_conf,
-            key_themes=self.topic_modeler.extract_topics(texts),
-            potential_catalysts=self._detect_catalysts(texts),
-            summary=""
+        
+        avg_sentiment_score = float(np.mean(scores)) if scores else 0.0
+        avg_sentiment_confidence = float(np.mean(confs)) if confs else 0.0
+        
+        overall_sentiment = (Sentiment.BULLISH if avg_sentiment_score > 0.1 else
+                             Sentiment.BEARISH if avg_sentiment_score < -0.1 else
+                             Sentiment.NEUTRAL)
+        
+        # Topic Modeling
+        key_themes = self.topic_modeler.extract_topics(texts)
+        
+        # Catalyst Detection
+        potential_catalysts = self._detect_catalysts(texts)
+
+        result = NewsAnalysisResult(
+            overall_sentiment=overall_sentiment,
+            sentiment_score=avg_sentiment_score,
+            sentiment_confidence=avg_sentiment_confidence,
+            key_themes=key_themes,
+            potential_catalysts=potential_catalysts,
+            summary="" # To be added by LLM summary
         )
         logger.info(
-            f"Analysis complete → Sentiment: {result.overall_sentiment}, "
-            f"Score: {result.sentiment_score:.2f}, Themes: {result.key_themes}"
+            f"Structured analysis complete → Sentiment: {result.overall_sentiment} ({result.sentiment_score:.2f}), "
+            f"Themes: {result.key_themes}, Catalysts: {len(result.potential_catalysts)}"
         )
         return result
 
     def _detect_catalysts(self, texts: List[str]) -> List[Catalyst]:
         catalysts = []
         keywords = {
-            FinancialEventType.EARNINGS: ['earnings', 'quarterly results', 'eps', 'revenue'],
-            FinancialEventType.PRODUCT_LAUNCH: ['launch', 'new product', 'announce', 'release'],
-            FinancialEventType.MERGER_ACQUISITION: ['acquire', 'merge', 'takeover', 'buyout'],
-            FinancialEventType.REGULATORY: ['fda', 'approval', 'regulation', 'investigation'],
+            FinancialEventType.EARNINGS: ['earnings', 'quarterly results', 'eps', 'revenue', 'financial report'],
+            FinancialEventType.PRODUCT_LAUNCH: ['launch', 'new product', 'announce', 'release', 'unveil', 'innovation'],
+            FinancialEventType.MERGER_ACQUISITION: ['acquire', 'merge', 'takeover', 'buyout', 'acquisition', 'deal'],
+            FinancialEventType.REGULATORY: ['fda', 'approval', 'regulation', 'investigation', 'antitrust', 'compliance'],
+            FinancialEventType.EXECUTIVE_CHANGE: ['ceo', 'cfo', 'resigns', 'appoints', 'leadership change'],
+            FinancialEventType.GUIDANCE_UPDATE: ['guidance', 'outlook', 'forecast', 'expectations'],
+            FinancialEventType.PARTNERSHIP: ['partnership', 'collaboration', 'alliance'],
+            FinancialEventType.LAWSUIT: ['lawsuit', 'suit', 'legal action', 'settlement']
         }
-        for t in texts:
+        
+        for _, t in enumerate(texts):
             t_lower = t.lower()
             for et, kws in keywords.items():
                 if any(k in t_lower for k in kws):
+                    snippet_start = max(0, t_lower.find(kws[0]) - 50)
+                    snippet_end = min(len(t), snippet_start + 200)
+                    description_snippet = t[snippet_start:snippet_end].strip() + "..." if len(t) > 200 else t
+
                     catalysts.append(Catalyst(
-                        description=t[:100] + "..." if len(t) > 100 else t,
-                        event_type=et,
-                        expected_impact="short-term",
-                        confidence=0.7
+                        description=description_snippet,
+                        event_type=et
                     ))
+                    if len(catalysts) >= 5:
+                        return catalysts
                     break
-        return catalysts[:3]
-    
-    # check args of this with abstraction
-    def _calculate_confidence_score(self, articles: List[NewsArticle], analysis: NewsAnalysisResult) -> float:
-        if not articles: return 0.1
-        factors = {
-            "data_quantity": min(len(articles)/10, 1.0)*0.3,
-            "data_recency": self._calculate_recency_score(articles)*0.25,
-            "data_relevance": np.mean([a.relevance_score for a in articles])*0.2,
-            "analysis_confidence": analysis.sentiment_confidence*0.25,
-        }
-        return min(max(sum(factors.values()), 0.1), 0.95)
+        return catalysts
+
+    def _calculate_overall_confidence(self, articles: List[NewsArticle], analysis: NewsAnalysisResult) -> float:
+        """
+        Calculates a single, unified confidence score for the entire Data Journalist analysis.
+        This combines data quality, recency, relevance, and NLP model confidence.
+        """
+        if not articles:
+            return 0.1 
+
+        data_quantity_score = min(len(articles) / 20.0, 1.0) * 0.25
+
+        recency_score = self._calculate_recency_score(articles) * 0.25
+
+        avg_relevance = np.mean([a.relevance_score for a in articles]) if articles else 0.0
+        data_relevance_score = avg_relevance * 0.2
+
+        sentiment_model_confidence = analysis.sentiment_confidence * 0.2
+
+        analysis_richness_score = 0.0
+        if analysis.key_themes:
+            analysis_richness_score += 0.05
+        if analysis.potential_catalysts:
+            analysis_richness_score += 0.05
+
+        total_confidence = (
+            data_quantity_score +
+            recency_score +
+            data_relevance_score +
+            sentiment_model_confidence +
+            analysis_richness_score
+        )
+        
+        return min(max(total_confidence, 0.1), 0.95)
 
     def _calculate_recency_score(self, articles: List[NewsArticle]) -> float:
         now = datetime.now(timezone.utc)
-        recent_count = 0
+        recency_sum = 0.0
+        if not articles:
+            return 0.0
+            
         for a in articles:
             pub = a.published_at
             if pub.tzinfo is None:
                 pub = pub.replace(tzinfo=timezone.utc)
-            if (now - pub).days <= 1:
-                recent_count += 1
-        return min(recent_count / len(articles) * 2, 1.0)
+            
+            days_old = (now - pub).days
+
+            recency_score_article = np.exp(-days_old / 10.0) 
+            recency_sum += recency_score_article
+            
+        return min(recency_sum / len(articles), 1.0) 
 
     def _prepare_metadata(self, articles: List[NewsArticle], analysis: NewsAnalysisResult) -> Dict[str, Any]:
         sources = list({a.source for a in articles})
+        
+        top_articles_for_display = []
+        sorted_articles = sorted(articles, key=lambda x: x.relevance_score, reverse=True)
+        for article in sorted_articles[:5]:
+            top_articles_for_display.append({
+                "title": article.title,
+                "source": article.source,
+                "published_at": article.published_at.isoformat(),
+                "description": article.description,
+                "url": str(article.url) if article.url else None,
+                "relevance_score": article.relevance_score
+            })
+
         metadata = {
             "articles_analyzed": len(articles),
-            "sources_analyzed": sources[:5],
+            "sources_analyzed": sources,
             "avg_relevance_score": np.mean([a.relevance_score for a in articles]),
             "date_range": {
                 "oldest": min(a.published_at for a in articles).isoformat(),
                 "newest": max(a.published_at for a in articles).isoformat()
             },
             "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
-            "model_version": "finbert-topic-1.0"
+            "model_version": "finbert-bertopic-2.0", 
+            "articles": top_articles_for_display
         }
         logger.info(
             f"Metadata prepared → {metadata['articles_analyzed']} articles, "
@@ -313,8 +404,9 @@ class DataJournalistAgent(BaseAgent):
         return AgentResult(
             agent_name=self.name,
             company_ticker=ticker,
-            analysis="No recent relevant news articles found.",
-            confidence_score=0.1,
+            analysis="No recent relevant news articles found for comprehensive analysis. "
+                     "Consider broadening the search period or checking the ticker symbol.",
+            confidence_score=0.05,
             metadata={"articles_found": 0},
             errors="No relevant news data available"
         )
