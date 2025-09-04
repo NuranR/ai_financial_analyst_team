@@ -10,6 +10,7 @@ crewai>=0.22.0
 # Data processing
 pandas>=2.1.0
 numpy>=1.24.0
+nltk>=3.9.1
 yfinance>=0.2.18
 alpha-vantage>=2.3.1
 
